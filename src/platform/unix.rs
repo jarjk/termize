@@ -2,27 +2,22 @@
 #![allow(clippy::useless_conversion)]
 
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, TIOCGWINSZ, ioctl, winsize};
-use std::mem::zeroed;
+use std::{fs::File, mem::zeroed, os::fd::IntoRawFd};
 
 /// Runs the ioctl command. Returns (0, 0) if all of the streams are not to a terminal, or
 /// there is an error. (0, 0) is an invalid size to have anyway, which is why
 /// it can be used as a nil value.
 unsafe fn get_dimensions_any() -> winsize {
     let mut window: winsize = unsafe { zeroed() };
-    let mut result = unsafe { ioctl(STDOUT_FILENO, TIOCGWINSZ.into(), &mut window) };
+    let Ok(tty) = File::options().read(true).write(true).open("/dev/tty") else {
+        return unsafe { zeroed() };
+    };
 
-    if result == -1 {
-        window = unsafe { zeroed() };
-        result = unsafe { ioctl(STDIN_FILENO, TIOCGWINSZ.into(), &mut window) };
-        if result == -1 {
-            window = unsafe { zeroed() };
-            result = unsafe { ioctl(STDERR_FILENO, TIOCGWINSZ.into(), &mut window) };
-            if result == -1 {
-                return unsafe { zeroed() };
-            }
-        }
+    if unsafe { ioctl(tty.into_raw_fd(), TIOCGWINSZ.into(), &mut window) } == -1 {
+        unsafe { zeroed() }
+    } else {
+        window
     }
-    window
 }
 
 /// Runs the ioctl command. Returns (0, 0) if the output is not to a terminal, or
